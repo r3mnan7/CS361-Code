@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PKI &amp; TLS Trust Walkthrough</title>
+  <style>
+    /* ---------- Tokens ---------- */
+    :root {
+      --bg: #0a111e;
+      --surface: #111b2d;
+      --surface-2: #17233a;
+      --text: #e8eef8;
+      --muted: #a6b5cb;
+      --border: #2b3b57;
+      --lifeline: #35486a;
+      --accent: #74aeff;
+      --on-accent: #06121f;
+      --accent-soft: rgba(116, 174, 255, .13);
+      --success: #4ade80;
+      --success-soft: rgba(74, 222, 128, .11);
+      --danger: #ff8196;
+      --danger-soft: rgba(255, 129, 150, .12);
+      --warn: #ffd166;
+      --focus: #ffd166;
+      --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+      --radius: 14px;
+      --radius-sm: 9px;
+      --bar-h: 76px;
+      --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --t-fast: 140ms;
+      --t-med: 380ms;
+      --ease-out: cubic-bezier(.2, .7, .2, 1);
+    }
+
+    :root[data-theme="light"] {
+      --bg: #f2f5fa;
+      --surface: #ffffff;
+      --surface-2: #eef2f8;
+      --text: #0f1b2d;
+      --muted: #475870;
+      --border: #cbd5e3;
+      --lifeline: #b4c1d4;
+      --accent: #1d4ed8;
+      --on-accent: #ffffff;
+      --accent-soft: rgba(29, 78, 216, .09);
+      --success: #15803d;
+      --success-soft: rgba(21, 128, 61, .09);
+      --danger: #b91c1c;
+      --danger-soft: rgba(185, 28, 28, .08);
+      --warn: #92400e;
+      --focus: #b45309;
+      --shadow: 0 8px 24px rgba(15, 27, 45, .10);
+    }
+
+    /* ---------- Base ---------- */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-padding-bottom: calc(var(--bar-h) + 16px); }
+
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      font-size: 1.0625rem;
+      line-height: 1.55;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding-bottom: calc(var(--bar-h) + 24px);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; touch-action: manipulation; }
+
+    :focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+      border-radius: 6px;
+    }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap;
+    }
+
+    .skip {
+      position: absolute; left: 16px; top: -60px; z-index: 100;
+      background: var(--accent); color: var(--on-accent);
+      padding: 10px 14px; border-radius: var(--radius-sm); font-weight: 700;
+    }
+    .skip:focus { top: 12px; }
+
+    .ico { width: 1.15em; height: 1.15em; flex: none; vertical-align: -0.18em; }
+
+    .wrap { max-width: 1500px; margin-inline: auto; padding-inline: clamp(16px, 3vw, 40px); }
+
+    /* ---------- Header ---------- */
+    .top { padding-block: 22px 14px; }
+
+    .top-row {
+      display: flex; gap: 16px 28px; flex-wrap: wrap;
+      align-items: flex-end; justify-content: space-between;
+    }
+
+    h1 {
+      font-size: clamp(1.5rem, 2.6vw, 2.3rem);
+      line-height: 1.12;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+    }
+
+    .lede { color: var(--muted); max-width: 70ch; margin-top: 8px; font-size: 1rem; }
+
+    .tools { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+
+    .field label {
+      display: block; font-size: .82rem; font-weight: 600;
+      color: var(--muted); margin-bottom: 4px;
+    }
+
+    select {
+      min-height: 44px; padding: 8px 12px; max-width: 100%;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+
+    .btn {
+      min-height: 44px; padding: 8px 16px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-weight: 650;
+      transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+    }
+    .btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .btn:active { transform: scale(.97); }
+    .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+    .btn.primary:hover { filter: brightness(1.08); background: var(--accent); }
+    .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+    .btn[aria-disabled="true"]:hover { border-color: var(--border); background: var(--surface); filter: none; }
+    .btn.primary[aria-disabled="true"]:hover { background: var(--accent); border-color: transparent; }
+    .btn[aria-disabled="true"]:active { transform: none; }
+
+    .scenario-note {
+      margin-top: 14px; padding: 12px 16px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: var(--radius-sm);
+      display: flex; gap: 6px 18px; flex-wrap: wrap;
+    }
+    .scenario-note[data-broken="true"] { border-left-color: var(--warn); }
+    .scenario-note strong { white-space: nowrap; }
+    .scenario-note .q { color: var(--muted); }
+
+    /* ---------- Layout ---------- */
+    .app { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+
+    @media (min-width: 1100px) {
+      .app { grid-template-columns: minmax(0, 1.12fr) minmax(400px, .88fr); align-items: start; }
+      .detail {
+        position: sticky; top: 14px;
+        max-height: calc(100dvh - var(--bar-h) - 34px);
+        overflow-y: auto;
+      }
+    }
+
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+
+    /* ---------- Sequence diagram ---------- */
+    .seq { padding-bottom: 14px; }
+
+    .actors {
+      position: sticky; top: 0; z-index: 10;
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding-block: 12px;
+    }
+
+    .actor { text-align: center; padding-inline: 8px; }
+
+    .actor-card {
+      display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 8px 12px; border-radius: var(--radius-sm);
+      border: 2px solid transparent; max-width: 100%;
+      transition: border-color var(--t-fast), background var(--t-fast);
+    }
+    .actor-card .ico { width: 26px; height: 26px; color: var(--accent); }
+    .actor-name { font-weight: 700; font-size: 1rem; line-height: 1.2; }
+    .actor-sub { color: var(--muted); font-size: .82rem; line-height: 1.3; }
+    .actor[data-active="true"] .actor-card { border-color: var(--accent); background: var(--accent-soft); }
+    .actor[data-bad="true"] .actor-card .ico,
+    .actor[data-bad="true"] .actor-name { color: var(--danger); }
+    .actor[data-bad="true"][data-active="true"] .actor-card { border-color: var(--danger); background: var(--danger-soft); }
+
+    @media (max-width: 640px) { .actor-sub { display: none; } .actor-name { font-size: .9rem; } }
+
+    .phase-head {
+      padding: 14px 16px 6px;
+      display: flex; gap: 4px 12px; flex-wrap: wrap; align-items: baseline;
+    }
+    .phase-head h3 { font-size: .86rem; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+    .phase-head span { color: var(--muted); font-size: .86rem; }
+
+    .ladder {
+      list-style: none; margin: 0; padding: 0;
+      background:
+        linear-gradient(var(--lifeline), var(--lifeline)) 16.666% 0 / 2px 100% no-repeat,
+        linear-gradient(var(--lifeline), var(--lifeline)) 50% 0 / 2px 100% no-repeat,
+        linear-gradient(var(--lifeline), var(--lifeline)) 83.333% 0 / 2px 100% no-repeat;
+    }
+
+    .row { scroll-margin-top: 120px; scroll-margin-bottom: calc(var(--bar-h) + 24px); }
+
+    .row-btn {
+      position: relative; display: block; width: 100%;
+      background: transparent; border: 0; border-left: 4px solid transparent;
+      padding: 9px 0; text-align: center; color: var(--muted);
+      transition: background var(--t-fast);
+    }
+    .row-btn:hover { background: var(--accent-soft); }
+    .row-btn:disabled { cursor: not-allowed; }
+    .row-btn:disabled:hover { background: transparent; }
+
+    .row-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; }
+
+    .msg { padding-inline: 6px; min-width: 0; }
+    .msg .wire { margin-inline: calc(25% - 3px); }
+    .msg.self { padding-inline: 8px; }
+
+    .label {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap;
+      padding: 3px 9px; border-radius: 999px;
+      background: var(--surface); font-size: .93rem; font-weight: 600; line-height: 1.25;
+      overflow-wrap: break-word;
+    }
+    .msg.self .label {
+      border: 1.5px dashed var(--lifeline); border-radius: var(--radius-sm); padding: 7px 10px;
+    }
+
+    .num {
+      display: inline-grid; place-items: center; flex: none;
+      min-width: 1.55em; height: 1.55em; padding-inline: 3px;
+      border-radius: 999px; border: 1.5px solid currentColor;
+      font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    }
+
+    .wire {
+      display: block; position: relative; height: 12px; margin-top: 3px;
+      background: linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+    }
+    .wire.r::after, .wire.both::after,
+    .wire.l::before, .wire.both::before {
+      content: ""; position: absolute; top: 1px;
+      border-block: 5px solid transparent;
+    }
+    .wire.r::after, .wire.both::after { right: 0; border-left: 10px solid currentColor; }
+    .wire.l::before, .wire.both::before { left: 0; border-right: 10px solid currentColor; }
+
+    .state {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      display: none; font-size: 1.05rem;
+    }
+
+    .row[data-state="done"] .row-btn { color: var(--text); }
+    .row[data-state="done"] .state { display: block; color: var(--success); }
+
+    .row[data-state="current"] .row-btn {
+      color: var(--text); background: var(--accent-soft); border-left-color: var(--accent);
+    }
+    .row[data-state="current"] .label { color: var(--accent); background: var(--surface); }
+    .row[data-state="current"] .wire { color: var(--accent); }
+    .row[data-state="current"] .num { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+    .row[data-state="failed"] .row-btn {
+      color: var(--danger); background: var(--danger-soft); border-left-color: var(--danger);
+    }
+    .row[data-state="failed"] .state { display: block; }
+    .row[data-state="failed"] .label { border-color: var(--danger); }
+
+    .row[data-state="blocked"] .label { text-decoration: line-through; }
+    .row[data-state="blocked"] .state { display: block; }
+
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 6px 20px;
+      padding: 14px 16px 0; margin-top: 10px;
+      border-top: 1px solid var(--border);
+      color: var(--muted); font-size: .86rem;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .legend .wire { width: 34px; margin: 0; }
+    .legend .box { width: 22px; height: 14px; border: 1.5px dashed var(--lifeline); border-radius: 4px; }
+
+    /* ---------- Detail panel ---------- */
+    .detail { padding: 20px; }
+    .detail > * + * { margin-top: 16px; }
+
+    .kicker { color: var(--muted); font-size: .86rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+
+    .step-title { font-size: clamp(1.3rem, 1.9vw, 1.75rem); line-height: 1.18; letter-spacing: -0.015em; margin-top: 4px; text-wrap: balance; }
+
+    .copy { max-width: 68ch; }
+
+    .idea {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      padding: 11px 14px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      max-width: 68ch;
+    }
+    .idea b { display: block; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+
+    .outcome {
+      padding: 13px 15px; border-radius: var(--radius-sm);
+      border: 1.5px solid var(--success); background: var(--success-soft);
+    }
+    .outcome h3 { font-size: 1.05rem; display: flex; gap: 8px; align-items: center; color: var(--success); }
+    .outcome[data-kind="fail"] { border-color: var(--danger); background: var(--danger-soft); }
+    .outcome[data-kind="fail"] h3 { color: var(--danger); }
+    .outcome dl { margin: 8px 0 0; display: grid; gap: 6px; }
+    .outcome dt { font-size: .8rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+    .outcome dd { margin: 0; }
+    .outcome code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
+
+    details {
+      border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+    }
+    summary {
+      cursor: pointer; padding: 11px 14px; min-height: 44px; font-weight: 650;
+      display: flex; align-items: center; gap: 8px;
+    }
+    summary::marker { content: ""; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: "+"; font-family: var(--mono); font-weight: 700; color: var(--accent); width: 1ch; }
+    details[open] > summary::before { content: "\2212"; }
+    .details-body { padding: 0 14px 13px 14px; }
+    .details-body p + p { margin-top: 8px; }
+    .ask-q { font-weight: 600; }
+    .ask-a { color: var(--muted); }
+
+    .block-title { font-size: .86rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+
+    pre.wireview {
+      margin: 0; padding: 12px 14px; overflow-x: auto;
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-family: var(--mono); font-size: .88rem; line-height: 1.5; white-space: pre-wrap;
+    }
+
+    /* Certificate */
+    .cert-empty { color: var(--muted); border: 1.5px dashed var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+
+    .chain { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
+    .chain li {
+      display: grid; grid-template-columns: 7.2em minmax(0, 1fr); gap: 2px 10px;
+      padding: 7px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface-2); font-size: .93rem;
+    }
+    .chain li + li { position: relative; margin-top: 12px; }
+    .chain li + li::before {
+      content: "signs \2193"; position: absolute; top: -17px; left: 12px;
+      font-size: .72rem; color: var(--muted); letter-spacing: .04em;
+    }
+    .chain .role { color: var(--muted); font-weight: 650; }
+    .chain .where { grid-column: 2; color: var(--muted); font-size: .84rem; }
+
+    .fields { margin: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+    .fields > div {
+      display: grid; grid-template-columns: 7.6em minmax(0, 1fr) auto; gap: 10px;
+      padding: 7px 11px; align-items: baseline; font-size: .93rem;
+    }
+    .fields > div + div { border-top: 1px solid var(--border); }
+    .fields dt { color: var(--muted); font-weight: 650; }
+    .fields dd { margin: 0; font-family: var(--mono); font-size: .88rem; overflow-wrap: anywhere; }
+    .fields .mark { font-size: .82rem; font-weight: 700; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+    .fields .mark.pass { color: var(--success); }
+    .fields .mark.fail { color: var(--danger); }
+    .fields > div[data-v="fail"] { background: var(--danger-soft); }
+
+    /* Checklist */
+    .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .checks li {
+      display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px;
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface-2);
+    }
+    .checks .ico { margin-top: .2em; color: var(--muted); }
+    .checks .what { font-weight: 600; }
+    .checks .verdict { grid-column: 2; font-size: .88rem; color: var(--muted); }
+    .checks li[data-s="pass"] { border-color: var(--success); background: var(--success-soft); }
+    .checks li[data-s="pass"] .ico, .checks li[data-s="pass"] .verdict { color: var(--success); }
+    .checks li[data-s="fail"] { border-color: var(--danger); background: var(--danger-soft); }
+    .checks li[data-s="fail"] .ico, .checks li[data-s="fail"] .verdict { color: var(--danger); }
+
+    .glossary dl { margin: 0; display: grid; gap: 8px; }
+    .glossary dt { font-weight: 700; }
+    .glossary dd { margin: 0; color: var(--muted); }
+
+    /* ---------- Control bar ---------- */
+    .bar {
+      position: fixed; inset: auto 0 0 0; z-index: 50;
+      background: var(--surface); border-top: 1px solid var(--border);
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, .22);
+    }
+    .bar-inner { min-height: var(--bar-h); display: flex; align-items: center; gap: 12px; padding-block: 10px; }
+    .progress { flex: 1; min-width: 0; }
+    .progress-text { font-size: .93rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+    .progress-text[data-fail="true"] { color: var(--danger); }
+    .track { height: 6px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); margin-top: 6px; overflow: hidden; }
+    .fill { height: 100%; width: 100%; background: var(--accent); transform-origin: left; transition: transform var(--t-med) var(--ease-out); }
+    .fill[data-fail="true"] { background: var(--danger); }
+    .keys { color: var(--muted); font-size: .8rem; }
+    kbd { font-family: var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--surface-2); }
+
+    @media (max-width: 720px) {
+      .keys, .btn .wide { display: none; }
+      .btn { padding-inline: 12px; }
+    }
+
+    /* ---------- Motion ---------- */
+    @media (prefers-reduced-motion: no-preference) {
+      .row[data-state="current"] .wire.r, .row[data-state="failed"] .wire.r { animation: draw-r var(--t-med) var(--ease-out); }
+      .row[data-state="current"] .wire.l, .row[data-state="failed"] .wire.l { animation: draw-l var(--t-med) var(--ease-out); }
+      .row[data-state="current"] .wire.both { animation: draw-both var(--t-med) var(--ease-out); }
+      .row[data-state="current"] .msg.self .label, .row[data-state="failed"] .msg.self .label { animation: pop var(--t-med) var(--ease-out); }
+      .swap { animation: fade 220ms var(--ease-out); }
+    }
+    @keyframes draw-r { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+    @keyframes draw-l { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
+    @keyframes draw-both { from { clip-path: inset(0 50%); } to { clip-path: inset(0); } }
+    @keyframes pop { from { transform: scale(.94); opacity: .4; } to { transform: none; opacity: 1; } }
+    @keyframes fade { from { opacity: .35; } to { opacity: 1; } }
+
+    @media print {
+      .bar, .tools, .skip { display: none; }
+      .detail { position: static; max-height: none; }
+      body { padding-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#detail">Skip to the current step</a>
+
+  <header class="top wrap">
+    <div class="top-row">
+      <div>
+        <h1>PKI &amp; TLS: how a browser decides to trust a server</h1>
+        <p class="lede">
+          Step through certificate issuance and a TLS 1.3 handshake for <code>https://example-bank.test</code>,
+          then break something and watch where it fails. (SSL is the retired predecessor of TLS; the name stuck.)
+        </p>
+      </div>
+      <div class="tools">
+        <div class="field">
+          <label for="scenario">Scenario</label>
+          <select id="scenario"></select>
+        </div>
+        <button class="btn" id="themeBtn" type="button" aria-pressed="false">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>
+          Light theme
+        </button>
+      </div>
+    </div>
+    <div class="scenario-note" id="scenarioNote"></div>
+  </header>
+
+  <main class="app wrap">
+    <section class="panel seq" aria-label="Sequence diagram. Each row is a step; select one to jump to it.">
+      <div class="actors" id="actors"></div>
+      <div id="phases"></div>
+      <div class="legend" aria-label="Legend">
+        <span><span class="wire r" aria-hidden="true"></span> Message sent over the network</span>
+        <span><span class="box" aria-hidden="true"></span> Local action, nothing sent</span>
+        <span id="legendLock"></span>
+      </div>
+    </section>
+
+    <aside class="panel detail" id="detail" tabindex="-1" aria-label="Current step">
+      <div id="stepHead">
+        <p class="kicker" id="kicker"></p>
+        <h2 class="step-title" id="stepTitle"></h2>
+      </div>
+      <p class="copy" id="stepCopy"></p>
+      <div class="outcome" id="outcome" hidden></div>
+      <p class="idea"><b>Key idea</b><span id="stepIdea"></span></p>
+
+      <details id="askBox">
+        <summary>Ask the class</summary>
+        <div class="details-body">
+          <p class="ask-q" id="askQ"></p>
+          <details id="answerBox" style="margin-top:10px">
+            <summary>Show a model answer</summary>
+            <div class="details-body"><p class="ask-a" id="askA"></p></div>
+          </details>
+        </div>
+      </details>
+
+      <section aria-labelledby="wireH">
+        <h3 class="block-title" id="wireH">What this step contains</h3>
+        <pre class="wireview" id="wireView"></pre>
+      </section>
+
+      <section aria-labelledby="certH">
+        <h3 class="block-title" id="certH">The certificate the server presents</h3>
+        <div id="certView"></div>
+      </section>
+
+      <section aria-labelledby="checksH">
+        <h3 class="block-title" id="checksH">The browser's checks</h3>
+        <ul class="checks" id="checks"></ul>
+      </section>
+
+      <details class="glossary">
+        <summary>Glossary</summary>
+        <div class="details-body">
+          <dl>
+            <div><dt>CA (Certificate Authority)</dt><dd>An organization that signs certificates after validating who controls a name.</dd></div>
+            <div><dt>Root and intermediate CA</dt><dd>The root's certificate ships in the browser or operating system and its key is kept offline. Intermediates, signed by the root, do the day-to-day signing.</dd></div>
+            <div><dt>CSR (Certificate Signing Request)</dt><dd>The name and public key a server wants certified, signed with its own private key.</dd></div>
+            <div><dt>SAN (Subject Alternative Name)</dt><dd>The certificate field listing every hostname the certificate is valid for. Browsers match against this, not the Common Name.</dd></div>
+            <div><dt>SNI (Server Name Indication)</dt><dd>The hostname the client sends in ClientHello so a server hosting many sites can pick the right certificate.</dd></div>
+            <div><dt>CRL and OCSP</dt><dd>Two ways to learn a certificate was revoked: a downloadable list of revoked serial numbers, or a per-certificate status query.</dd></div>
+            <div><dt>ACME</dt><dd>The protocol that automates domain validation and certificate issuance and renewal.</dd></div>
+            <div><dt>Forward secrecy</dt><dd>Session keys come from a one-time key exchange, so a private key stolen later cannot decrypt recorded traffic.</dd></div>
+          </dl>
+        </div>
+      </details>
+    </aside>
+  </main>
+
+  <div class="bar" role="group" aria-label="Step controls">
+    <div class="bar-inner wrap">
+      <button class="btn" id="prevBtn" type="button">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        Back
+      </button>
+      <div class="progress">
+        <div class="progress-text" id="progressText"></div>
+        <div class="track" aria-hidden="true"><div class="fill" id="progressFill"></div></div>
+      </div>
+      <span class="keys" aria-hidden="true"><kbd>←</kbd> <kbd>→</kbd> step · <kbd>Home</kbd> start</span>
+      <button class="btn" id="resetBtn" type="button" aria-label="Restart from step 1 with the normal scenario">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        <span class="wide">Restart</span>
+      </button>
+      <button class="btn primary" id="nextBtn" type="button">
+        Next
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" id="live"></div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    /* ---------- Icons (inline SVG, Lucide-style) ---------- */
+    const PATHS = {
+      check: '<path d="M20 6 9 17l-5-5"/>',
+      x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+      ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+      dot: '<circle cx="12" cy="12" r="8" stroke-dasharray="3 3.3"/>',
+      lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+      monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+      server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/>',
+      shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>'
+    };
+    const icon = (name, label) =>
+      `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ${label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}>${PATHS[name]}</svg>`;
+
+    /* ---------- Content ---------- */
+    const HOST = "example-bank.test";
+    const COL = { client: 1, server: 2, ca: 3 };
+
+    const PHASES = [
+      { id: "issue", name: "Phase 1 · Getting a certificate", sub: "Happens once, long before any visitor arrives" },
+      { id: "hs", name: "Phase 2 · TLS 1.3 handshake", sub: "Every new connection, in milliseconds" },
+      { id: "val", name: "Phase 3 · The browser decides", sub: "Local checks on what the server sent" },
+      { id: "done", name: "Phase 4 · Secure session", sub: "" }
+    ];
+
+    const STEPS = [
+      {
+        id: "keygen", phase: "issue", from: "server", short: "Generate key pair",
+        title: "The server generates a key pair",
+        copy: "The server's operator generates a public/private key pair. The public key can be given to anyone. The private key never leaves the server.",
+        idea: "Everything that follows depends on the private key staying secret. A certificate is public; the private key is what makes it yours.",
+        ask: "If an attacker copies the server's public key, what can they do with it?",
+        answer: "Nothing harmful. A public key only lets you verify signatures the server makes. Producing those signatures takes the private key.",
+        wire: "Private key  ->  stays on the server, secret\nPublic key   ->  will be placed in the certificate"
+      },
+      {
+        id: "csr", phase: "issue", from: "server", to: "ca", short: "CSR",
+        title: "The server sends a Certificate Signing Request",
+        copy: "The server sends the CA a CSR: the domain name it wants certified and its public key, signed with the matching private key. The private key itself is never sent.",
+        idea: "The signature on the CSR shows the requester holds the private key that matches the public key in the request.",
+        ask: "Why does the CA never need to see the server's private key?",
+        answer: "The CA only vouches for the link between a name and a public key. It can confirm the requester holds the private key by checking the CSR's signature with the public key.",
+        wire: "CSR\n  Subject:     " + HOST + "\n  Public key:  ECDSA P-256 3a:9b:5e:...\n  Signature:   made with the server's private key"
+      },
+      {
+        id: "validate", phase: "issue", from: "ca", to: "server", both: true, short: "Domain validation",
+        title: "The CA checks who controls the domain",
+        copy: "The CA makes the requester prove control of " + HOST + ", usually with a challenge: publish this random token in a DNS record, or at a set URL on the site. Automated CAs run this with the ACME protocol.",
+        idea: "A domain-validated (DV) certificate proves control of a name. It says nothing about whether the people behind it are honest. OV and EV certificates add checks on the organization.",
+        ask: "A phishing site at examp1e-bank.test has a valid certificate and a padlock. Did PKI fail?",
+        answer: "No. The certificate truthfully binds a key to that look-alike name. PKI authenticates names; it does not judge intent. Noticing the wrong name is left to the user and to phishing filters.",
+        wire: "CA -> requester:  place token 'kX7...q2' at\n                  _acme-challenge." + HOST + " (DNS TXT)\nCA:               looks it up, finds the token\nResult:           requester controls the domain"
+      },
+      {
+        id: "issue", phase: "issue", from: "ca", to: "server", short: "Signed certificate",
+        title: "The CA signs and returns the certificate",
+        copy: "The CA builds the certificate (name, public key, validity dates), hashes it and signs the hash with a CA private key. The root CA's key stays offline; an intermediate CA signs server certificates and the root signs the intermediate. The server installs its certificate together with the intermediate's.",
+        idea: "The chain of trust: root signs intermediate, intermediate signs the server's certificate. Keeping the root offline means a compromised intermediate can be revoked without replacing every browser's trust store.",
+        ask: "Why not sign every server certificate directly with the root key?",
+        answer: "The root key would have to be online and in constant use, and stealing it would break trust in everything. Roots take years to distribute to devices, so they are used rarely and kept offline.",
+        wire: "Certificate\n  Subject / SAN:  " + HOST + "\n  Public key:     the server's\n  Issuer:         Teaching Issuing CA R1\n  Validity:       about 90 days\n  Signature:      by the issuer's private key"
+      },
+      {
+        id: "clienthello", phase: "hs", from: "client", to: "server", short: "ClientHello",
+        title: "The browser says hello",
+        copy: "The browser opens a connection and sends ClientHello: the TLS versions and cipher suites it supports, the hostname it wants (SNI) and its half of a one-time Diffie-Hellman key exchange, the key share. This message is not encrypted.",
+        idea: "The client offers, the server chooses. The hostname in SNI is readable by anyone on the network path unless Encrypted Client Hello is in use.",
+        ask: "Which parts of this message could an eavesdropper on the café Wi-Fi read?",
+        answer: "All of it, including the hostname being visited. Nothing secret has been sent yet: the key share is a public value.",
+        wire: "ClientHello  (plaintext)\n  supported_versions:  TLS 1.3\n  cipher_suites:       TLS_AES_128_GCM_SHA256, ...\n  server_name (SNI):   " + HOST + "\n  key_share:           client's ephemeral public value"
+      },
+      {
+        id: "serverhello", phase: "hs", from: "server", to: "client", short: "ServerHello",
+        title: "The server answers and encryption begins",
+        copy: "The server picks the version and cipher suite and returns its own key share. Both sides now compute the same shared secret and derive handshake keys. Everything after this message is encrypted.",
+        idea: "In TLS 1.3 encryption starts before authentication finishes. The browser is now encrypting to someone, but does not yet know who. The certificate answers that. (TLS 1.2 sent the certificate unencrypted and exchanged keys afterwards.)",
+        ask: "The connection is already encrypted. Why isn't that enough?",
+        answer: "Encryption to an unknown party protects nothing. An attacker in the middle could run this same key exchange with the browser. The browser still has to learn who holds the other end.",
+        wire: "ServerHello  (plaintext)\n  selected_version:  TLS 1.3\n  cipher_suite:      TLS_AES_128_GCM_SHA256\n  key_share:         server's ephemeral public value\n\nBoth sides: shared secret -> handshake keys"
+      },
+      {
+        id: "certificate", phase: "hs", from: "server", to: "client", enc: true, short: "Certificate",
+        title: "The server presents its certificate",
+        copy: "The server sends its certificate and the intermediate CA's certificate. The root is not sent: the browser must already have it.",
+        idea: "Anyone can send this message. Certificates are public documents, so presenting one proves nothing by itself.",
+        ask: "Could an attacker download this certificate and present it from their own server?",
+        answer: "Yes, trivially. That is why the next message exists: the server must also prove it holds the private key. Try the 'replayed certificate' scenario to see it fail.",
+        wire: "Certificate  (encrypted)\n  [0] " + HOST + "        <- server (leaf)\n  [1] Teaching Issuing CA R1   <- intermediate\n  root: not sent"
+      },
+      {
+        id: "certverify", phase: "hs", from: "server", to: "client", enc: true, short: "CertificateVerify + Finished",
+        title: "The server signs the handshake",
+        copy: "The server signs a hash of every handshake message so far with its private key (CertificateVerify). It then sends Finished, a keyed checksum over the handshake that confirms nothing was altered on the way. These arrive in the same flight as the certificate.",
+        idea: "This signature is the proof of possession. It covers the fresh random values of this handshake, so a recording of an old handshake cannot be replayed.",
+        ask: "Why sign the whole handshake instead of a fixed message such as 'I am " + HOST + "'?",
+        answer: "A fixed message could be recorded once and replayed forever. The handshake contains values that are new every time, so the signature is only valid for this connection.",
+        wire: "CertificateVerify  (encrypted)\n  signature = Sign(server private key,\n                   hash(all handshake messages so far))\nFinished  (encrypted)\n  HMAC over the handshake transcript"
+      },
+      {
+        id: "chain", phase: "val", from: "client", short: "Build chain to a root",
+        title: "The browser builds a chain to a trusted root",
+        copy: "The browser tries to link the server's certificate, through the intermediate, to a root certificate in its own trust store. That store ships with the browser or the operating system.",
+        idea: "The browser does not contact the CA here. Trust comes from root certificates already installed on the device.",
+        ask: "Who decided which roots your laptop trusts? Could your employer add one?",
+        answer: "The browser or OS vendor, through a root program with audit requirements. An administrator can add roots, which is how corporate TLS inspection works and why installing an unknown root is dangerous.",
+        wire: "Trust store (local):  Teaching Root CA, ...\n\nserver cert  --issued by-->  intermediate\nintermediate --issued by-->  root in trust store?"
+      },
+      {
+        id: "sig", phase: "val", from: "client", short: "Verify signatures",
+        title: "The browser verifies each signature in the chain",
+        copy: "With the root's public key the browser verifies the signature on the intermediate. With the intermediate's public key it verifies the signature on the server's certificate. Changing a single bit of a signed certificate makes its signature fail.",
+        idea: "The CA signs with its private key; anyone can verify with its public key. This gives authenticity and integrity. It is not encryption and hides nothing.",
+        ask: "An attacker swaps the public key in a certificate for their own. Why can't they just fix the signature?",
+        answer: "A valid signature over the changed certificate can only be produced with the CA's private key, which the attacker does not have.",
+        wire: "Verify(root public key,          intermediate.signature)\nVerify(intermediate public key,  server_cert.signature)\n\nBoth must succeed."
+      },
+      {
+        id: "host", phase: "val", from: "client", short: "Name, dates, revocation",
+        title: "The browser checks the name, the dates and revocation",
+        copy: "The hostname the user asked for must appear in the certificate's Subject Alternative Name (SAN) list; modern browsers ignore the older Common Name field. Today's date must fall inside the validity period. And the certificate must not have been revoked, which browsers learn from CRLs, OCSP or revocation lists delivered with browser updates.",
+        idea: "Most certificate errors people meet come from this step: expired certificates and names missing from the SAN list. Revocation is the weakest check: when a browser cannot get an answer, it often lets the connection through (soft-fail).",
+        ask: "Why do certificates expire at all, if they can be revoked?",
+        answer: "Revocation is unreliable, so expiry is the backstop that limits how long a stolen key is useful. It also forces keys and algorithms to be refreshed. Lifetimes keep getting shorter for this reason.",
+        wire: "Requested host:  " + HOST + "\nIn SAN list?     must match\nToday within Not Before .. Not After?\nSerial number on a revocation list?"
+      },
+      {
+        id: "possession", phase: "val", from: "client", short: "Verify proof of key",
+        title: "The browser verifies the server holds the private key",
+        copy: "The browser checks the CertificateVerify signature using the public key from the certificate it has just validated, then checks the server's Finished message.",
+        idea: "Validating the certificate answers “is this a genuine certificate for " + HOST + "?”. This step answers “is the party I am talking to its owner?”. Both are needed.",
+        ask: "Every certificate check passed. What attack is still possible if the browser skipped this step?",
+        answer: "Impersonation with a copied certificate. Any server could present the real site's public certificate and be accepted.",
+        wire: "Verify(public key from server_cert,\n       CertificateVerify.signature,\n       hash(handshake transcript))\nCheck server Finished"
+      },
+      {
+        id: "finished", phase: "done", from: "client", to: "server", enc: true, short: "Finished",
+        title: "The browser finishes and both sides derive session keys",
+        copy: "The browser sends its own Finished. Both sides derive the application traffic keys from the shared secret and the handshake transcript.",
+        idea: "The certificate's key pair authenticated the server. It did not encrypt the data. Session keys come from the one-time Diffie-Hellman exchange, which gives forward secrecy: a server key stolen next year cannot decrypt traffic recorded today.",
+        ask: "Which keys were used for what? Name the job of each.",
+        answer: "CA private key: signed the certificate. Server private key: signed the handshake. Ephemeral Diffie-Hellman keys: produced the shared secret. Symmetric session keys: encrypt the data.",
+        wire: "Finished  (encrypted)\n  HMAC over the handshake transcript\n\nBoth sides: derive application traffic keys"
+      },
+      {
+        id: "app", phase: "done", from: "client", to: "server", both: true, enc: true, short: "Application data",
+        title: "Application data flows, encrypted",
+        copy: "HTTP now travels inside the TLS connection, encrypted and integrity-protected with fast symmetric ciphers such as AES-GCM or ChaCha20-Poly1305.",
+        idea: "An observer still sees the IP addresses, the hostname (through SNI and DNS) and the timing and size of traffic. They do not see URLs, headers, cookies or content. Server authentication is standard; client certificates (mutual TLS) are optional and rare on the public web.",
+        ask: "TLS is working perfectly. Name two things it does not protect you from.",
+        answer: "A malicious or compromised site at the far end, malware on your own device, a look-alike domain with its own valid certificate, and metadata such as which site you visited and when.",
+        wire: "GET /account HTTP/1.1          -> encrypted\nCookie: session=...            -> encrypted\n200 OK + account page          <- encrypted\n\nObserver sees: endpoints, hostname, sizes, timing"
+      }
+    ];
+
+    const IDX = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
+    const LAST = STEPS.length - 1;
+    const HS_START = IDX.clienthello;
+
+    const CHECKS = [
+      { id: "chain", step: "chain", what: "Chain ends at a root in the trust store",
+        fail: "The issuing CA does not lead to any root this browser trusts." },
+      { id: "sig", step: "sig", what: "Every signature in the chain verifies",
+        fail: "The certificate's contents no longer match the CA's signature: it was changed after signing." },
+      { id: "name", step: "host", what: "Hostname is in the SAN list",
+        fail: "The user asked for " + HOST + " but the certificate lists other names." },
+      { id: "dates", step: "host", what: "Today is inside the validity period",
+        fail: "The Not After date has passed." },
+      { id: "revoked", step: "host", what: "Certificate is not revoked",
+        fail: "The CA has published this certificate's serial number as revoked." },
+      { id: "possession", step: "possession", what: "Server proves it holds the private key",
+        fail: "The CertificateVerify signature does not verify with the public key in the certificate." }
+    ];
+
+    const SCEN = {
+      valid: {
+        label: "Normal: everything valid",
+        setup: "A correctly issued certificate on the genuine server.",
+        fails: null
+      },
+      untrustedCA: {
+        label: "Broken: unknown CA",
+        setup: "The certificate was issued by a CA the browser has never heard of. A self-signed certificate fails the same way.",
+        fails: "chain",
+        sees: "A full-page warning. Chrome shows <code>NET::ERR_CERT_AUTHORITY_INVALID</code>.",
+        alert: "unknown_ca",
+        fix: "Use a publicly trusted CA, or for an internal CA install its root on the clients. Also confirm the server sends its intermediate certificate: a missing intermediate produces the same error."
+      },
+      tampered: {
+        label: "Broken: certificate altered",
+        setup: "Someone swapped the public key in the certificate after the CA signed it.",
+        fails: "sig",
+        sees: "A full-page warning. Firefox shows <code>SEC_ERROR_BAD_SIGNATURE</code>.",
+        alert: "bad_certificate",
+        fix: "Nothing can be repaired in place: only the CA can produce a valid signature. Treat it as an attack or corruption and investigate."
+      },
+      wrongHost: {
+        label: "Broken: wrong hostname",
+        setup: "The server is configured with a valid certificate that was issued for a different site.",
+        fails: "name",
+        sees: "A full-page warning. Chrome shows <code>NET::ERR_CERT_COMMON_NAME_INVALID</code>.",
+        alert: null,
+        fix: "Reissue the certificate with every hostname the site uses in the SAN list, or correct the server configuration so it serves the right certificate."
+      },
+      expired: {
+        label: "Broken: expired certificate",
+        setup: "Nobody renewed the certificate.",
+        fails: "dates",
+        sees: "A full-page warning. Chrome shows <code>NET::ERR_CERT_DATE_INVALID</code>.",
+        alert: "certificate_expired",
+        fix: "Renew and deploy the certificate, then automate renewal (ACME). If only one user sees it, check that device's clock."
+      },
+      revoked: {
+        label: "Broken: revoked certificate",
+        setup: "The CA revoked this certificate after the server's private key was reported stolen.",
+        fails: "revoked",
+        sees: "A full-page warning. Chrome shows <code>NET::ERR_CERT_REVOKED</code>.",
+        alert: "certificate_revoked",
+        fix: "Generate a new key pair and obtain a new certificate. The old key must never be reused."
+      },
+      replay: {
+        label: "Attack: replayed certificate",
+        setup: "An attacker intercepts the connection and presents a copy of the real, valid certificate. They do not have the server's private key.",
+        fails: "possession",
+        sees: "A connection-failure page with no option to continue.",
+        alert: "decrypt_error",
+        fix: "Nothing: the protocol did its job. The attacker would need the private key, which is why a stolen key leads straight to revocation."
+      }
+    };
+
+    /* ---------- State ---------- */
+    let cur = 0;
+    let scen = "valid";
+
+    const $ = id => document.getElementById(id);
+    const failIdx = () => {
+      const f = SCEN[scen].fails;
+      return f ? IDX[CHECKS.find(c => c.id === f).step] : null;
+    };
+    const maxStep = () => failIdx() ?? LAST;
+    const aborted = () => failIdx() !== null && cur === failIdx();
+
+    const fmtDate = d => {
+      const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+      return String(d.getDate()).padStart(2, "0") + "-" + m + "-" + d.getFullYear();
+    };
+    const daysFromNow = n => { const d = new Date(); d.setDate(d.getDate() + n); return d; };
+
+    /* ---------- Build static structure ---------- */
+    const ACTORS = [
+      { id: "client", icon: "monitor", name: "Browser" },
+      { id: "server", icon: "server", name: "Web server" },
+      { id: "ca", icon: "shield", name: "Certificate Authority" }
+    ];
+
+    function buildActors() {
+      $("actors").innerHTML = ACTORS.map(a =>
+        `<div class="actor" id="actor-${a.id}"><div class="actor-card">${icon(a.icon)}
+           <span class="actor-name"></span><span class="actor-sub"></span></div></div>`).join("");
+    }
+
+    function buildLadder() {
+      const host = $("phases");
+      PHASES.forEach(p => {
+        const steps = STEPS.map((s, i) => ({ s, i })).filter(o => o.s.phase === p.id);
+        const sec = document.createElement("section");
+        sec.innerHTML = `<div class="phase-head"><h3>${p.name}</h3><span>${p.sub}</span></div>`;
+        const ol = document.createElement("ol");
+        ol.className = "ladder";
+        ol.start = steps[0].i + 1;
+        steps.forEach(({ s, i }) => {
+          const li = document.createElement("li");
+          li.className = "row";
+          li.id = "row-" + i;
+          const a = COL[s.from], b = s.to ? COL[s.to] : a;
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          const dir = s.both ? "both" : (b > a ? "r" : "l");
+          const lock = s.enc ? icon("lock", "encrypted") : "";
+          li.innerHTML =
+            `<button type="button" class="row-btn">
+               <span class="row-grid">
+                 <span class="msg ${s.to ? "" : "self"}" style="grid-column:${lo} / ${hi + 1}">
+                   <span class="label"><span class="num">${i + 1}</span><span>${s.short}</span>${lock}</span>
+                   ${s.to ? `<span class="wire ${dir}"></span>` : ""}
+                 </span>
+               </span>
+               <span class="state"></span>
+               <span class="sr-only sr-state"></span>
+             </button>`;
+          li.querySelector("button").addEventListener("click", () => go(i));
+          ol.appendChild(li);
+        });
+        sec.appendChild(ol);
+        host.appendChild(sec);
+      });
+      $("legendLock").innerHTML = icon("lock") + " Encrypted in transit";
+    }
+
+    function buildScenarioSelect() {
+      const sel = $("scenario");
+      Object.entries(SCEN).forEach(([k, v]) => sel.add(new Option(v.label, k)));
+      sel.addEventListener("change", e => {
+        scen = e.target.value;
+        // Restart at the handshake so the class can watch for the failure.
+        if (cur > HS_START) cur = HS_START;
+        render(true);
+      });
+    }
+
+    /* ---------- Render ---------- */
+    function rowState(i) {
+      if (aborted()) return i === cur ? "failed" : (i > cur ? "blocked" : "done");
+      return i < cur ? "done" : (i === cur ? "current" : "future");
+    }
+
+    function checkState(c) {
+      const at = IDX[c.step];
+      if (cur < at) return aborted() ? "skipped" : "pending";
+      return SCEN[scen].fails === c.id ? "fail" : "pass";
+    }
+
+    function renderActors(step) {
+      const impostor = scen === "replay" && cur >= HS_START;
+      const badCA = scen === "untrustedCA";
+      const info = {
+        client: ["Browser", "Holds a trust store of root CA certificates"],
+        server: impostor
+          ? ["Impostor server", "Has a copy of the certificate, not the private key"]
+          : ["Web server", HOST + " · holds its private key"],
+        ca: badCA
+          ? ["Unknown CA", "Not in the browser's trust store"]
+          : ["Certificate Authority", "Signs certificates with its private key"]
+      };
+      ACTORS.forEach(a => {
+        const el = $("actor-" + a.id);
+        el.querySelector(".actor-name").textContent = info[a.id][0];
+        el.querySelector(".actor-sub").textContent = info[a.id][1];
+        el.dataset.active = String(step.from === a.id || step.to === a.id);
+        el.dataset.bad = String((a.id === "server" && impostor) || (a.id === "ca" && badCA));
+      });
+    }
+
+    function renderLadder() {
+      STEPS.forEach((s, i) => {
+        const li = $("row-" + i), st = rowState(i);
+        const btn = li.querySelector("button");
+        li.dataset.state = st;
+        btn.disabled = st === "blocked";
+        if (i === cur) btn.setAttribute("aria-current", "step"); else btn.removeAttribute("aria-current");
+        li.querySelector(".state").innerHTML =
+          st === "done" ? icon("check") : st === "failed" ? icon("x") : st === "blocked" ? icon("ban") : "";
+        li.querySelector(".sr-state").textContent =
+          st === "done" ? " (completed)" : st === "failed" ? " (fails here, handshake aborted)" :
+          st === "blocked" ? " (not reached)" : "";
+      });
+    }
+
+    function renderCert() {
+      const view = $("certView");
+      if (cur < IDX.issue) {
+        view.innerHTML = `<p class="cert-empty">No certificate exists yet. The CA issues it in step ${IDX.issue + 1}.</p>`;
+        return;
+      }
+      const s = scen;
+      const expired = s === "expired", unknown = s === "untrustedCA";
+      const nb = fmtDate(daysFromNow(expired ? -120 : -30));
+      const na = fmtDate(daysFromNow(expired ? -30 : 60));
+      const san = s === "wrongHost" ? "other-site.test, www.other-site.test" : HOST + ", www." + HOST;
+      const subj = s === "wrongHost" ? "other-site.test" : HOST;
+      const issuer = unknown ? "Unknown Issuing CA" : "Teaching Issuing CA R1";
+      const root = unknown ? "Unknown Root CA" : "Teaching Root CA";
+      const key = s === "tampered" ? "ECDSA P-256 e7:02:d4:..." : "ECDSA P-256 3a:9b:5e:...";
+
+      const state = id => checkState(CHECKS.find(c => c.id === id));
+      const mark = id => {
+        const st = state(id);
+        if (st === "pass") return `<span class="mark pass">${icon("check")} OK</span>`;
+        if (st === "fail") return `<span class="mark fail">${icon("x")} Fails</span>`;
+        return "<span></span>";
+      };
+      const row = (dt, dd, id) =>
+        `<div data-v="${id ? state(id) : ""}"><dt>${dt}</dt><dd>${dd}</dd>${id ? mark(id) : "<span></span>"}</div>`;
+
+      view.innerHTML =
+        `<ol class="chain" aria-label="Certificate chain">
+           <li><span class="role">Root</span><span>${root}</span>
+               <span class="where">Self-signed. ${unknown ? "Not in the browser's trust store." : "Already in the browser's trust store."}</span></li>
+           <li><span class="role">Intermediate</span><span>${issuer}</span>
+               <span class="where">Sent by the server during the handshake.</span></li>
+           <li><span class="role">Server (leaf)</span><span>${subj}</span>
+               <span class="where">Sent by the server during the handshake. Fields below.</span></li>
+         </ol>
+         <dl class="fields">
+           ${row("SAN", san, "name")}
+           ${row("Issuer", issuer, "chain")}
+           ${row("Not Before", nb)}
+           ${row("Not After", na + " <span style=\"font-family:var(--sans)\">(today is " + fmtDate(new Date()) + ")</span>", "dates")}
+           ${row("Public key", key)}
+           ${row("Signature", "ECDSA-SHA256, by issuer", "sig")}
+           ${row("Serial", "04:a1:7c:2e:...", "revoked")}
+         </dl>`;
+    }
+
+    function renderChecks() {
+      $("checks").innerHTML = CHECKS.map(c => {
+        const st = checkState(c), n = IDX[c.step] + 1;
+        const ic = st === "pass" ? "check" : st === "fail" ? "x" : st === "skipped" ? "ban" : "dot";
+        const verdict =
+          st === "pass" ? "Passed" :
+          st === "fail" ? "Failed. " + c.fail :
+          st === "skipped" ? "Not evaluated: the handshake was already aborted" :
+          "Evaluated in step " + n;
+        return `<li data-s="${st}">${icon(ic)}<span class="what">${c.what}</span><span class="verdict">${verdict}</span></li>`;
+      }).join("");
+    }
+
+    function renderOutcome() {
+      const box = $("outcome"), sc = SCEN[scen];
+      if (aborted()) {
+        const check = CHECKS.find(c => c.id === sc.fails);
+        box.hidden = false;
+        box.dataset.kind = "fail";
+        box.innerHTML =
+          `<h3>${icon("x")} Handshake aborted at this step</h3>
+           <dl>
+             <div><dt>Why</dt><dd>${check.fail}</dd></div>
+             <div><dt>What the user sees</dt><dd>${sc.sees}</dd></div>
+             ${sc.alert ? `<div><dt>TLS alert sent</dt><dd><code>${sc.alert}</code></dd></div>` : ""}
+             <div><dt>How it gets fixed</dt><dd>${sc.fix}</dd></div>
+           </dl>`;
+        return "Handshake aborted. " + check.fail;
+      }
+      if (cur === LAST) {
+        box.hidden = false;
+        box.dataset.kind = "ok";
+        box.innerHTML = `<h3>${icon("check")} Secure session established</h3>
+          <p style="margin-top:6px">All six checks passed. The browser shows the page with no warning.</p>`;
+        return "Secure session established.";
+      }
+      box.hidden = true;
+      box.innerHTML = "";
+      return "";
+    }
+
+    function renderScenarioNote() {
+      const sc = SCEN[scen], note = $("scenarioNote");
+      const broken = sc.fails !== null;
+      note.dataset.broken = String(broken);
+      note.innerHTML = `<span><strong>${sc.label}.</strong> ${sc.setup}</span>` +
+        (broken && !aborted()
+          ? `<span class="q">Predict: which check catches this, at which step, and what does the user see?</span>`
+          : "");
+    }
+
+    function renderBar(outcomeText) {
+      const f = aborted();
+      const text = $("progressText");
+      text.textContent = `Step ${cur + 1} of ${STEPS.length}` + (f ? " · handshake aborted" : " · " + STEPS[cur].short);
+      text.dataset.fail = String(f);
+      const fill = $("progressFill");
+      fill.style.transform = `scaleX(${(cur + 1) / STEPS.length})`;
+      fill.dataset.fail = String(f);
+      $("prevBtn").setAttribute("aria-disabled", String(cur === 0));
+      $("nextBtn").setAttribute("aria-disabled", String(cur >= maxStep()));
+      $("live").textContent = `Step ${cur + 1} of ${STEPS.length}: ${STEPS[cur].title}. ${outcomeText}`;
+    }
+
+    function render(scroll) {
+      const step = STEPS[cur];
+      const phase = PHASES.find(p => p.id === step.phase);
+
+      renderActors(step);
+      renderLadder();
+
+      $("kicker").textContent = `Step ${cur + 1} of ${STEPS.length} · ${phase.name.split(" · ")[1]}`;
+      $("stepTitle").textContent = step.title;
+      $("stepCopy").textContent = step.copy;
+      $("stepIdea").textContent = step.idea;
+      $("askQ").textContent = step.ask;
+      $("askA").textContent = step.answer;
+      $("askBox").open = false;
+      $("answerBox").open = false;
+      $("wireView").textContent = step.wire;
+
+      renderCert();
+      renderChecks();
+      const outcomeText = renderOutcome();
+      renderScenarioNote();
+      renderBar(outcomeText);
+
+      // Retrigger the content fade.
+      const head = $("stepHead");
+      head.classList.remove("swap");
+      void head.offsetWidth;
+      head.classList.add("swap");
+
+      try {
+        history.replaceState(null, "", `#step=${cur + 1}&scenario=${scen}`);
+      } catch (e) { /* file:// in some browsers */ }
+
+      if (scroll) {
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        $("row-" + cur).scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+        $("detail").scrollTop = 0;
+      }
+    }
+
+    function go(i) {
+      const next = Math.max(0, Math.min(i, maxStep()));
+      if (next === cur) return;
+      cur = next;
+      render(true);
+    }
+
+    /* ---------- Events ---------- */
+    $("nextBtn").addEventListener("click", () => go(cur + 1));
+    $("prevBtn").addEventListener("click", () => go(cur - 1));
+    $("resetBtn").addEventListener("click", () => {
+      cur = 0; scen = "valid"; $("scenario").value = "valid"; render(true);
+    });
+
+    document.addEventListener("keydown", e => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if (t instanceof HTMLSelectElement || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); go(cur + 1); }
+      else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(cur - 1); }
+      else if (e.key === "Home") { e.preventDefault(); go(0); }
+    });
+
+    const themeBtn = $("themeBtn");
+    function setTheme(t) {
+      document.documentElement.dataset.theme = t;
+      themeBtn.setAttribute("aria-pressed", String(t === "light"));
+      try { localStorage.setItem("pki-demo-theme", t); } catch (e) { /* storage unavailable */ }
+    }
+    themeBtn.addEventListener("click", () =>
+      setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"));
+
+    /* ---------- Init ---------- */
+    buildActors();
+    buildLadder();
+    buildScenarioSelect();
+
+    try {
+      const saved = localStorage.getItem("pki-demo-theme");
+      if (saved === "light" || saved === "dark") setTheme(saved);
+    } catch (e) { /* storage unavailable */ }
+
+    const params = new URLSearchParams(location.hash.slice(1));
+    if (SCEN[params.get("scenario")]) { scen = params.get("scenario"); $("scenario").value = scen; }
+    const wanted = parseInt(params.get("step"), 10);
+    if (Number.isInteger(wanted)) cur = Math.max(0, Math.min(wanted - 1, maxStep()));
+
+    render(false);
+  })();
+  </script>
+</body>
+</html>
